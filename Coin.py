@@ -13,7 +13,7 @@ import tensorflow as tf
 from sklearn.preprocessing import MinMaxScaler
 
 # URL API Binance
-API_URL = "https://data.binance.com/api/v3"
+API_URL = "https://api.binance.com/api/v3/klines"
 
 # Đặt múi giờ Việt Nam
 vietnam_tz = pytz.timezone('Asia/Ho_Chi_Minh')
@@ -56,7 +56,7 @@ def get_coin_data(symbol, interval, start_time):
 # Hàm để lấy danh sách các đồng coin
 def get_available_symbols():
     try:
-        response = requests.get("https://api.binance.com/api/v3/exchangeInfo")
+        response = requests.get("https://data.binance.com/api/v3")
         response.raise_for_status()
         symbols = [s['symbol'] for s in response.json()['symbols'] if s['status'] == 'TRADING']
     except requests.exceptions.RequestException as e:
