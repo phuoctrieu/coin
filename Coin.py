@@ -11,12 +11,34 @@ import pytz
 from sklearn.linear_model import LinearRegression
 import tensorflow as tf
 from sklearn.preprocessing import MinMaxScaler
+import time
+import hmac
+import hashlib
+import random
+import json
 
 # URL API Binance
 API_URL = "https://api.binance.com/api/v3/klines"
 
 # Đặt múi giờ Việt Nam
 vietnam_tz = pytz.timezone('Asia/Ho_Chi_Minh')
+
+def create_binance_pay_header(api_key, secret_key, body):
+    """Tạo tiêu đề Binance Pay API."""
+    timestamp = int(time.time() * 1000)
+    nonce = ''.join(random.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ') for i in range(32))
+    payload = f"{timestamp}\n{nonce}\n{body}\n"
+    signature = hmac.new(secret_key.encode(), payload.encode(), hashlib.sha512).hexdigest().upper()
+
+    header = {
+        "Content-Type": "application/json",
+        "BinancePay-Timestamp": str(timestamp),
+        "BinancePay-Nonce": nonce,
+        "BinancePay-Certificate-SN": api_key,
+        "BinancePay-Signature": signature
+    }
+
+    return header
 
 # Hàm để lấy dữ liệu coin
 @st.cache_data
@@ -30,9 +52,11 @@ def get_coin_data(symbol, interval, start_time):
         "startTime": start_time,
         "endTime": end_time  # Sử dụng end_time hiện tại
     }
-    headers = {
-        'X-MBX-APIKEY': 'USANNhZ9VkTD5BOauB1s7DaG01RlnfWulZGWgTU3lvd6RldxtWjEy88oun1Qbeev'
-    }
+    
+    # Chuyển đổi params thành JSON string để tạo header
+    body = json.dumps(params)  # Thêm import json nếu chưa có
+    headers = create_binance_pay_header('YOUR_API_KEY', 'YOUR_SECRET_KEY', body)  # Thay thế bằng khóa API và bí mật của bạn
+
     try:
         response = requests.get(API_URL, params=params, headers=headers)
         response.raise_for_status()  # Raise an error for bad responses
