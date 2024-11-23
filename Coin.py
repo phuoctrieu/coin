@@ -54,36 +54,18 @@ def get_coin_data(symbol, interval, start_time):
 
     return df
 
-# Cấu hình logging
-logging.basicConfig(filename='app.log', level=logging.ERROR, 
-                    format='%(asctime)s - %(levelname)s - %(message)s')
-
+# Hàm để lấy danh sách các đồng coin
 def get_available_symbols():
     try:
-        response = requests.get("https://api.binance.com/api/v3/exchangeInfo", verify=True)
-        response.raise_for_status()
+        # Sử dụng phương thức requests.get tương tự như trong get_coin_data
+        response = requests.get("https://api.binance.com/api/v3/exchangeInfo")  # Thêm verify=True
+        response.raise_for_status()  # Raise an error for bad responses
         data = response.json()
-        
-        if 'symbols' in data:
-            symbols = [s['symbol'] for s in data['symbols'] if 'status' in s and s['status'] == 'TRADING']
-        else:
-            st.error("Dữ liệu trả về từ Binance API không hợp lệ.")
-            logging.error("Invalid data returned from Binance API.")
-            return []
+        symbols = [s['symbol'] for s in data['symbols'] if s['status'] == 'TRADING']
         return symbols
-
-    except requests.exceptions.Timeout:
-        st.error("Lỗi timeout khi lấy danh sách symbol.")
-        logging.error("Timeout error when fetching available symbols.")
-        return []
-    except requests.exceptions.ConnectionError:
-        st.error("Lỗi kết nối tới Binance API.")
-        logging.error("Connection error to Binance API.")
-        return []
-    except requests.exceptions.RequestException as e:
-        st.error(f"Lỗi khi lấy danh sách symbol: {e}")
-        logging.error(f"Error fetching available symbols: {e}")
-        return []
+    except requests.exceptions.RequestException as e:  # Thay đổi để bắt tất cả các lỗi liên quan đến requests
+        st.error(f"Error fetching available symbols: {e}")  # Thông báo lỗi
+        return []  # Trả về danh sách rỗng trong trường hợp lỗi
 
 # Hàm dự đoán giá sử dụng GARCH model
 def predict_price_garch(df, horizon):
