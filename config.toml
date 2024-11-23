@@ -1,0 +1,13 @@
+[server]
+headless = true
+port = 8501
+enableCORS = false
+enableWebsocketCompression = true
+maxUploadSize = 2000
+
+[theme]
+base = "dark"
+primaryColor = "orange"
+
+[logger]
+level = "debug"
