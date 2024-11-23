@@ -22,7 +22,7 @@ vietnam_tz = pytz.timezone('Asia/Ho_Chi_Minh')
 # Hàm để lấy dữ liệu coin
 @st.cache_data
 def get_coin_data(symbol, interval, start_time):
-    # Sử dụng thời gian hiện tại làm end_time
+    time.sleep(1)  # Tạm dừng 1 giây trước khi thực hiện yêu cầu
     end_time = int((datetime.now() - timedelta(minutes=1)).timestamp() * 1000)  # Thời gian hiện tại trừ 1 phút
     
     params = {
@@ -57,8 +57,7 @@ def get_coin_data(symbol, interval, start_time):
 # Hàm để lấy danh sách các đồng coin
 def get_available_symbols():
     try:
-        # Sử dụng phương thức requests.get tương tự như trong get_coin_data
-        response = requests.get("https://api.binance.com/api/v3/exchangeInfo")  # Thêm verify=True
+        response = requests.get("https://api.binance.com/api/v3/exchangeInfo", verify=True)  # Thêm verify=True
         response.raise_for_status()  # Raise an error for bad responses
         data = response.json()
         symbols = [s['symbol'] for s in data['symbols'] if s['status'] == 'TRADING']
