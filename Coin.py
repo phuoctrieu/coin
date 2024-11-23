@@ -58,7 +58,7 @@ def get_coin_data(symbol, interval, start_time):
 def get_available_symbols():
     try:
         # Sử dụng phương thức requests.get tương tự như trong get_coin_data
-        response = requests.get("https://api.binance.com/api/v3/exchangeInfo")  # Thêm verify=True
+        response = requests.get("https://data.binance.com/api/v3/exchangeInfo")  # Thêm verify=True
         response.raise_for_status()  # Raise an error for bad responses
         data = response.json()
         symbols = [s['symbol'] for s in data['symbols'] if s['status'] == 'TRADING']
