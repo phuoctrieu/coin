@@ -86,7 +86,7 @@ def get_available_symbols():
         'X-MBX-APIKEY': 'USANNhZ9VkTD5BOauB1s7DaG01RlnfWulZGWgTU3lvd6RldxtWjEy88oun1Qbeev'
     }
     try:
-        response = requests.get("https://api.binance.com/api/v3/exchangeInfo", headers=headers)
+        response = requests.get("https://fapi.binance.com/fapi/v1/exchangeInfo", headers=headers)
         response.raise_for_status()
         symbols = [s['symbol'] for s in response.json()['symbols'] if s['status'] == 'TRADING']
     except requests.exceptions.RequestException as e:
