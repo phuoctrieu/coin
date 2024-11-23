@@ -8,3 +8,4 @@ statsmodels
 pytz
 scikit-learn
 tensorflow
+requests_cache
