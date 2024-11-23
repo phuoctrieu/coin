@@ -57,22 +57,15 @@ def get_coin_data(symbol, interval, start_time):
 # Hàm để lấy danh sách các đồng coin
 def get_available_symbols():
     try:
-        response = requests.get(
-            "https://api.binance.com/api/v3/exchangeInfo",
-            verify=True,
-            timeout=10
-        )
-        response.raise_for_status()
+        # Sử dụng phương thức requests.get tương tự như trong get_coin_data
+        response = requests.get("https://api.binance.com/api/v3/exchangeInfo", verify=True)  # Thêm verify=True
+        response.raise_for_status()  # Raise an error for bad responses
         data = response.json()
         symbols = [s['symbol'] for s in data['symbols'] if s['status'] == 'TRADING']
         return symbols
-    except requests.exceptions.HTTPError as http_err:
-        st.error(f"HTTP error occurred: {http_err}")
-        st.error(f"Response content: {response.text}")  # Print response content
-        return []
-    except Exception as e:
-        st.error(f"An unexpected error occurred: {e}")
-        return []
+    except requests.exceptions.RequestException as e:  # Thay đổi để bắt tất cả các lỗi liên quan đến requests
+        st.error(f"Error fetching available symbols: {e}")  # Thông báo lỗi
+        return []  # Trả về danh sách rỗng trong trường hợp lỗi
 
 # Hàm dự đoán giá sử dụng GARCH model
 def predict_price_garch(df, horizon):
