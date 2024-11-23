@@ -56,7 +56,10 @@ def get_coin_data(symbol, interval, start_time):
 # Hàm để lấy danh sách các đồng coin
 def get_available_symbols():
     try:
-        response = requests.get("https://api.binance.com/api/v3/exchangeInfo")
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+        }
+        response = requests.get("https://api.binance.com/api/v3/exchangeInfo", headers=headers)
         response.raise_for_status()
         symbols = [s['symbol'] for s in response.json()['symbols'] if s['status'] == 'TRADING']
     except requests.exceptions.RequestException as e:
@@ -86,7 +89,7 @@ def predict_price_garch(df, horizon):
     
     return predicted_prices, predicted_volatility
 
-# Hàm dự đoán giá sử dụng Seasonal ARIMA
+# Hàm dự đoán giá sử d��ng Seasonal ARIMA
 def predict_price_arima(df, horizon):
     # Lấy dữ liệu giá đóng cửa
     close_prices = df["Close"]
@@ -194,7 +197,7 @@ def predict_price_action(df):
 
     # Tính toán các mức hỗ trợ và kháng cự
     support = np.min(close_prices[-10:])  # Mức hỗ trợ là giá thấp nhất trong 10 phiên gần nhất
-    resistance = np.max(close_prices[-10:])  # Mức kháng cự là giá cao nhất trong 10 phiên gần nhất
+    resistance = np.max(close_prices[-10:])  # Mức kháng c��� là giá cao nhất trong 10 phiên gần nhất
 
     # Dự đoán dựa trên hành động giá
     last_price = close_prices[-1]
@@ -224,7 +227,7 @@ else:
     # Chọn thời gian bắt đầu và kết thúc từ sidebar
     now = datetime.now()
     start_time = st.sidebar.date_input("Chọn ngày bắt đầu", now - timedelta(days=1))
-    end_time = st.sidebar.date_input("Chọn ngày kết thúc", now)
+    end_time = st.sidebar.date_input("Chọn ngày k��t thúc", now)
 
     # Chuyển đổi thời gian thành timestamp (ms)
     start_datetime = datetime.combine(start_time, datetime.min.time())
@@ -253,7 +256,7 @@ else:
     # Dự đoán giá sử dụng Seasonal ARIMA
     predicted_prices_arima = predict_price_arima(df, horizon)
 
-    # Dự đoán giá sử dụng Moving Averages
+    # Dự đoán gi�� s��� dụng Moving Averages
     last_short_ma, last_long_ma, moving_average_prediction = predict_price_moving_average(df)
 
     # Dự đoán giá sử dụng EMA
