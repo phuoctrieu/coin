@@ -61,7 +61,11 @@ def get_coin_data(symbol, interval, start_time):
 @st.cache_data
 def get_available_symbols():
     try:
-        response = requests.get("https://api.binance.com/api/v3/exchangeInfo", verify=True)
+        headers = {
+            "Accept": "application/json",
+            "X-MBX-SBE": "1:0"
+        }
+        response = requests.get("https://api.binance.com/api/v3/exchangeInfo", headers=headers)
         response.raise_for_status()
         data = response.json()
         symbols = [s['symbol'] for s in data['symbols'] if s['status'] == 'TRADING']
