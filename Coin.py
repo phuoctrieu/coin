@@ -11,6 +11,7 @@ import pytz
 from sklearn.linear_model import LinearRegression
 import tensorflow as tf
 from sklearn.preprocessing import MinMaxScaler
+import time  # Nhập thư viện time
 
 # URL API Binance
 API_URL = "https://api.binance.com/api/v3/klines"
@@ -206,6 +207,9 @@ def predict_price_action(df):
 
 # Giao diện Streamlit
 st.title("Dự đoán giá Coin với GARCH, ARIMA, Moving Averages, EMA, Seasonal ARIMA, GRU và Price Action")
+
+# Thêm delay 1 giây trước khi gọi hàm
+time.sleep(1)
 
 # Lấy danh sách các đồng coin có sẵn
 available_symbols = get_available_symbols()
