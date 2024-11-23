@@ -60,18 +60,15 @@ def get_available_symbols():
         response = requests.get(
             "https://api.binance.com/api/v3/exchangeInfo",
             verify=True,
-            timeout=10  # Set a timeout of 10 seconds
+            timeout=10
         )
-        print(f"Response status code: {response.status_code}")  # Log the status code
-        response.raise_for_status()  # Raise an error for HTTP status codes >= 400
+        response.raise_for_status()
         data = response.json()
         symbols = [s['symbol'] for s in data['symbols'] if s['status'] == 'TRADING']
         return symbols
-    except requests.exceptions.Timeout:
-        st.error("The request timed out. Please try again later.")
-        return []
-    except requests.exceptions.RequestException as req_err:
-        st.error(f"An error occurred while connecting to the Binance API: {req_err}")
+    except requests.exceptions.HTTPError as http_err:
+        st.error(f"HTTP error occurred: {http_err}")
+        st.error(f"Response content: {response.text}")  # Print response content
         return []
     except Exception as e:
         st.error(f"An unexpected error occurred: {e}")
