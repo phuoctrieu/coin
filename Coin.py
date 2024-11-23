@@ -56,11 +56,19 @@ def get_coin_data(symbol, interval, start_time):
 
 # Hàm để lấy danh sách các đồng coin
 def get_available_symbols():
-    response = requests.get("https://api.binance.com/api/v3/exchangeInfo", verify=True)
-    response.raise_for_status()  # Raise an error for bad responses
-    data = response.json()
-    symbols = [s['symbol'] for s in data['symbols'] if s['status'] == 'TRADING']
-    return symbols
+    try:
+        response = requests.get("https://api.binance.com/api/v3/exchangeInfo", verify=True)  # Thêm verify=True
+        print(f"Response status code: {response.status_code}")  # In ra mã trạng thái
+        response.raise_for_status()  # Raise an error for bad responses
+        data = response.json()
+        symbols = [s['symbol'] for s in data['symbols'] if s['status'] == 'TRADING']
+        return symbols
+    except requests.exceptions.HTTPError as http_err:
+        st.error(f"HTTP error occurred: {http_err}")  # Thông báo lỗi HTTP
+        return []  # Trả về danh sách rỗng trong trường hợp lỗi
+    except Exception as e:
+        st.error(f"An error occurred: {e}")  # Thông báo lỗi chung
+        return []  # Trả về danh sách rỗng trong trường hợp lỗi
 
 # Hàm dự đoán giá sử dụng GARCH model
 def predict_price_garch(df, horizon):
@@ -207,9 +215,6 @@ def predict_price_action(df):
 
 # Giao diện Streamlit
 st.title("Dự đoán giá Coin với GARCH, ARIMA, Moving Averages, EMA, Seasonal ARIMA, GRU và Price Action")
-
-# Thêm delay 1 giây trước khi gọi hàm
-time.sleep(1)
 
 # Lấy danh sách các đồng coin có sẵn
 available_symbols = get_available_symbols()
