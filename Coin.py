@@ -13,7 +13,7 @@ import tensorflow as tf
 from sklearn.preprocessing import MinMaxScaler
 
 # URL API Binance
-API_URL = "https://api.binance.com/api/v3/klines"
+API_URL = "https://data.binance.com/api/v3"
 
 # Đặt múi giờ Việt Nam
 vietnam_tz = pytz.timezone('Asia/Ho_Chi_Minh')
