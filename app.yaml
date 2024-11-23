@@ -1,6 +1,0 @@
-runtime: python311  # Chọn phiên bản Python phù hợp (Python 3.9 là ví dụ)
-
-entrypoint: streamlit run Coin.py --server.port=8080 --server.address=0.0.0.0
-
-env_variables:
-  STREAMLIT_SERVER_PORT: 8080
