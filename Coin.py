@@ -31,7 +31,7 @@ def get_coin_data(symbol, interval, start_time):
         "endTime": end_time  # Sử dụng end_time hiện tại
     }
     headers = {
-        "X-MBX-APIKEY": "USANNhZ9VkTD5BOauB1s7DaG01RlnfWulZGWgTU3lvd6RldxtWjEy88oun1Qbeev"
+        'X-MBX-APIKEY': 'USANNhZ9VkTD5BOauB1s7DaG01RlnfWulZGWgTU3lvd6RldxtWjEy88oun1Qbeev'
     }
     try:
         response = requests.get(API_URL, params=params, headers=headers)
@@ -58,11 +58,10 @@ def get_coin_data(symbol, interval, start_time):
 
 # Hàm để lấy danh sách các đồng coin
 def get_available_symbols():
+    headers = {
+        'X-MBX-APIKEY': 'USANNhZ9VkTD5BOauB1s7DaG01RlnfWulZGWgTU3lvd6RldxtWjEy88oun1Qbeev'
+    }
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3",
-            "X-MBX-APIKEY": "USANNhZ9VkTD5BOauB1s7DaG01RlnfWulZGWgTU3lvd6RldxtWjEy88oun1Qbeev"
-        }
         response = requests.get("https://api.binance.com/api/v3/exchangeInfo", headers=headers)
         response.raise_for_status()
         symbols = [s['symbol'] for s in response.json()['symbols'] if s['status'] == 'TRADING']
@@ -392,3 +391,4 @@ else:
     st.plotly_chart(fig)
         # Hiển thị biểu đồ
    
+
