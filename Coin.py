@@ -2,16 +2,20 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime, timedelta
-from arch import arch_model  # GARCH model
+from arch import arch_model
 import numpy as np
-from prophet import Prophet  # Prophet model
-import plotly.graph_objects as go  # Thư viện plotly
+from prophet import Prophet
+import plotly.graph_objects as go
 import statsmodels.api as sm
 import pytz
 from sklearn.linear_model import LinearRegression
 import tensorflow as tf
 from sklearn.preprocessing import MinMaxScaler
-import time  # Nhập thư viện time
+import time
+import requests_cache
+
+# Thiết lập cache cho requests
+requests_cache.install_cache('binance_cache', backend='sqlite', expire_after=300)
 
 # URL API Binance
 API_URL = "https://api.binance.com/api/v3/klines"
@@ -22,22 +26,21 @@ vietnam_tz = pytz.timezone('Asia/Ho_Chi_Minh')
 # Hàm để lấy dữ liệu coin
 @st.cache_data
 def get_coin_data(symbol, interval, start_time):
-    time.sleep(1)  # Tạm dừng 1 giây trước khi thực hiện yêu cầu
-    end_time = int((datetime.now() - timedelta(minutes=1)).timestamp() * 1000)  # Thời gian hiện tại trừ 1 phút
+    end_time = int((datetime.now() - timedelta(minutes=1)).timestamp() * 1000)
     
     params = {
         "symbol": symbol,
         "interval": interval,
         "startTime": start_time,
-        "endTime": end_time  # Sử dụng end_time hiện tại
+        "endTime": end_time
     }
     try:
         response = requests.get(API_URL, params=params)
-        response.raise_for_status()  # Raise an error for bad responses
+        response.raise_for_status()
         data = response.json()
     except requests.exceptions.RequestException as e:
         st.error(f"Error fetching data: {e}")
-        return pd.DataFrame()  # Return an empty DataFrame in case of error
+        return pd.DataFrame()
     
     df = pd.DataFrame(data, columns=[
         "Open time", "Open", "High", "Low", "Close", "Volume",
@@ -46,7 +49,7 @@ def get_coin_data(symbol, interval, start_time):
     ])
     df["Open time"] = pd.to_datetime(df["Open time"], unit="ms")
     df["Close time"] = pd.to_datetime(df["Close time"], unit="ms")
-    df["Close"] = pd.to_numeric(df["Close"])  # Ensure Close is numeric
+    df["Close"] = pd.to_numeric(df["Close"])
 
     # Chuyển đổi thời gian từ UTC sang múi giờ Việt Nam
     df["Open time"] = df["Open time"].dt.tz_localize('UTC').dt.tz_convert(vietnam_tz)
@@ -55,336 +58,319 @@ def get_coin_data(symbol, interval, start_time):
     return df
 
 # Hàm để lấy danh sách các đồng coin
+@st.cache_data
 def get_available_symbols():
     try:
-        response = requests.get("https://api.binance.com/api/v3/exchangeInfo", verify=True)  # Thêm verify=True
-        response.raise_for_status()  # Raise an error for bad responses
+        response = requests.get("https://api.binance.com/api/v3/exchangeInfo", verify=True)
+        response.raise_for_status()
         data = response.json()
         symbols = [s['symbol'] for s in data['symbols'] if s['status'] == 'TRADING']
         return symbols
-    except requests.exceptions.RequestException as e:  # Thay đổi để bắt tất cả các lỗi liên quan đến requests
-        st.error(f"Error fetching available symbols: {e}")  # Thông báo lỗi
-        return []  # Trả về danh sách rỗng trong trường hợp lỗi
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error fetching available symbols: {e}")
+        return []
 
 # Hàm dự đoán giá sử dụng GARCH model
-def predict_price_garch(df, horizon):
-    # Lấy dữ liệu giá đóng cửa
-    returns = df["Close"].pct_change().dropna()  # Tính tỷ lệ thay đổi giá (log return)
-
-    # Áp dụng mô hình GARCH(1, 1)
-    model = arch_model(returns, vol='Garch', p=1, q=1)
+@st.cache_data
+def predict_price_garch(df, horizon, p=1, q=1):  # Thêm tham số p, q
+    returns = df["Close"].pct_change().dropna()
+    model = arch_model(returns, vol='Garch', p=p, q=q)
     model_fitted = model.fit(disp="off")
-
-    # Dự đoán biến động giá trong nhiều bước
     forecast = model_fitted.forecast(horizon=horizon)
-    predicted_volatility = forecast.variance.values[-1, :]  # Dự báo độ biến động cho các bước
-
-    # Dự báo giá theo xu hướng hiện tại
+    predicted_volatility = forecast.variance.values[-1, :]
     last_price = df["Close"].iloc[-1]
-    predicted_return = returns.mean()  # Trung bình thay đổi giá
-
-    # Dự đoán giá cho các bước tới
+    predicted_return = returns.mean()
     predicted_prices = [last_price * (1 + predicted_return) for _ in range(horizon)]
-    
     return predicted_prices, predicted_volatility
 
 # Hàm dự đoán giá sử dụng Seasonal ARIMA
-def predict_price_arima(df, horizon):
-    # Lấy dữ liệu giá đóng cửa
-    close_prices = df["Close"]
-
-    # Khởi tạo và huấn luyện mô hình Seasonal ARIMA
-    model = sm.tsa.SARIMAX(close_prices, order=(1, 1, 1), seasonal_order=(1, 1, 1, 24))  # Điều chỉnh tham số theo nhu cầu
-    model_fitted = model.fit(disp=False)
-
-    # Dự đoán giá cho các bước tiếp theo
-    forecast = model_fitted.get_forecast(steps=horizon)
-    predicted_prices = forecast.predicted_mean.values
-    
-    return predicted_prices
-
-# Hàm dự đoán giá sử dụng Moving Averages
-def predict_price_moving_average(df, short_window=5, long_window=20):
-    # Tính toán Moving Averages
-    df['Short MA'] = df['Close'].rolling(window=short_window).mean()
-    df['Long MA'] = df['Close'].rolling(window=long_window).mean()
-
-    # Lấy giá trị cuối cùng của Short MA và Long MA
-    last_short_ma = df['Short MA'].iloc[-1]
-    last_long_ma = df['Long MA'].iloc[-1]
-
-    # Dự đoán dựa trên Moving Averages
-    if last_short_ma > last_long_ma:
-        prediction = "Mua"
-    else:
-        prediction = "Bán"
-
-    return last_short_ma, last_long_ma, prediction
-
-# Hàm dự đoán giá sử dụng Exponential Moving Average (EMA)
-def predict_price_ema(df, window=20):
-    # Tính toán EMA
-    df['EMA'] = df['Close'].ewm(span=window, adjust=False).mean()
-
-    # Lấy giá trị cuối cùng của EMA
-    last_ema = df['EMA'].iloc[-1]
-
-    # Dự đoán dựa trên EMA
-    if df['Close'].iloc[-1] > last_ema:
-        prediction = "Mua"
-    else:
-        prediction = "Bán"
-
-    return last_ema, prediction
-
-# Hàm dự đoán giá sử dụng Seasonal ARIMA
+@st.cache_data
 def predict_price_sarima(df, horizon, order=(1, 1, 1), seasonal_order=(1, 1, 1, 24)):
-    # Lấy dữ liệu giá đóng cửa
     close_prices = df["Close"]
-
-    # Khởi tạo và huấn luyện mô hình Seasonal ARIMA
     model = sm.tsa.SARIMAX(close_prices, order=order, seasonal_order=seasonal_order)
     model_fitted = model.fit(disp=False)
-
-    # Dự đoán giá cho các bước tiếp theo
     forecast = model_fitted.get_forecast(steps=horizon)
     predicted_prices = forecast.predicted_mean.values
-    
     return predicted_prices
 
 # Hàm dự đoán giá sử dụng GRU
-def predict_price_gru(df, horizon, n_steps=10):
-    # Chọn cột giá đóng cửa
-    data = df['Close'].values
-    data = data.reshape(-1, 1)
-
-    # Chuẩn hóa dữ liệu
-    scaler = MinMaxScaler(feature_range=(0, 1))
+@st.cache_data
+def predict_price_gru(df, horizon, n_steps=10, epochs=100, batch_size=32):  # Thêm epochs, batch_size
+    data = df['Close'].values.reshape(-1, 1)
+    scaler = MinMaxScaler()
     scaled_data = scaler.fit_transform(data)
-
-    # Tạo dữ liệu cho mô hình
     X, y = [], []
     for i in range(n_steps, len(scaled_data) - horizon + 1):
         X.append(scaled_data[i - n_steps:i, 0])
         y.append(scaled_data[i:i + horizon, 0])
-    
     X, y = np.array(X), np.array(y)
-    X = np.reshape(X, (X.shape[0], X.shape[1], 1))  # Định dạng cho GRU
-
-    # Xây dựng mô hình GRU
+    X = X.reshape(X.shape[0], X.shape[1], 1)
     model = tf.keras.Sequential()
     model.add(tf.keras.layers.GRU(50, return_sequences=True, input_shape=(X.shape[1], 1)))
     model.add(tf.keras.layers.GRU(50))
-    model.add(tf.keras.layers.Dense(horizon))  # Đầu ra cho số bước dự đoán
-
+    model.add(tf.keras.layers.Dense(horizon))
     model.compile(optimizer='adam', loss='mean_squared_error')
-
-    # Huấn luyện mô hình
-    model.fit(X, y, epochs=100, batch_size=32, verbose=0)
-
-    # Dự đoán
+    model.fit(X, y, epochs=epochs, batch_size=batch_size, verbose=0)
     last_data = scaled_data[-n_steps:].reshape(1, n_steps, 1)
     predicted_prices = model.predict(last_data)
-    predicted_prices = scaler.inverse_transform(predicted_prices)  # Chuyển đổi về giá thực
+    predicted_prices = scaler.inverse_transform(predicted_prices).flatten()
+    return predicted_prices
 
-    return predicted_prices.flatten()
+# Hàm dự đoán giá sử dụng Moving Averages
+def predict_price_moving_average(df, short_window=5, long_window=20):
+    df['Short MA'] = df['Close'].rolling(window=short_window).mean()
+    df['Long MA'] = df['Close'].rolling(window=long_window).mean()
+    last_short_ma = df['Short MA'].iloc[-1]
+    last_long_ma = df['Long MA'].iloc[-1]
+    prediction = "Mua" if last_short_ma > last_long_ma else "Bán"
+    return last_short_ma, last_long_ma, prediction
+
+# Hàm dự đoán giá sử dụng Exponential Moving Average (EMA)
+def predict_price_ema(df, window=20):
+    df['EMA'] = df['Close'].ewm(span=window, adjust=False).mean()
+    last_ema = df['EMA'].iloc[-1]
+    prediction = "Mua" if df['Close'].iloc[-1] > last_ema else "Bán"
+    return last_ema, prediction
 
 # Hàm dự đoán giá sử dụng Price Action
-def predict_price_action(df):
-    # Lấy giá đóng cửa
+def predict_price_action(df, window=10):  # Thêm tham số window
     close_prices = df['Close'].values
-
-    # Tính toán các mức hỗ trợ và kháng cự
-    support = np.min(close_prices[-10:])  # Mức hỗ trợ là giá thấp nhất trong 10 phiên gần nhất
-    resistance = np.max(close_prices[-10:])  # Mức kháng cự là giá cao nhất trong 10 phiên gần nhất
-
-    # Dự đoán dựa trên hành động giá
+    support = np.min(close_prices[-window:])
+    resistance = np.max(close_prices[-window:])
     last_price = close_prices[-1]
     if last_price < support:
-        prediction = "Bán"  # Giá dưới mức hỗ trợ
+        prediction = "Bán"
     elif last_price > resistance:
-        prediction = "Mua"  # Giá trên mức kháng cự
+        prediction = "Mua"
     else:
-        prediction = "Giữ"  # Giá nằm trong khoảng hỗ trợ và kháng cự
-
+        prediction = "Giữ"
     return support, resistance, prediction
 
+# Hàm để tính toán điểm mua vào và điểm chốt lời
+def calculate_entry_and_target_points(predicted_prices, last_price, risk_reward_ratio=2):
+    entry_points = []
+    target_points = []
+    for price in predicted_prices:
+        entry_points.append(last_price)  # Điểm mua vào là giá hiện tại
+        target_points.append(price + (price - last_price) * risk_reward_ratio)  # Điểm chốt lời
+    return entry_points, target_points
+
+# Hàm tính toán Average True Range (ATR)
+def calculate_atr(df, period=14):
+    df['High-Low'] = df['High'] - df['Low']
+    df['High-PrevClose'] = abs(df['High'] - df['Close'].shift(1))
+    df['Low-PrevClose'] = abs(df['Low'] - df['Close'].shift(1))
+    
+    df['TR'] = df[['High-Low', 'High-PrevClose', 'Low-PrevClose']].max(axis=1)
+    atr = df['TR'].rolling(window=period).mean()
+    
+    return atr
+
+# Hàm tính toán Bollinger Bands
+def calculate_bollinger_bands(df, window=20, num_std_dev=2):
+    df['MA'] = df['Close'].rolling(window=window).mean()
+    df['Upper Band'] = df['MA'] + (df['Close'].rolling(window=window).std() * num_std_dev)
+    df['Lower Band'] = df['MA'] - (df['Close'].rolling(window=window).std() * num_std_dev)
+    
+    return df[['MA', 'Upper Band', 'Lower Band']]
+
 # Giao diện Streamlit
-st.title("Dự đoán giá Coin với GARCH, ARIMA, Moving Averages, EMA, Seasonal ARIMA, GRU và Price Action")
+st.title("Dự đoán giá Coin")
 
 # Lấy danh sách các đồng coin có sẵn
 available_symbols = get_available_symbols()
 if not available_symbols:
     st.error("Không thể lấy danh sách các đồng coin.")
 else:
-    # Chọn cặp coin từ sidebar
+    # Chọn cặp coin, khoảng thời gian, thời gian bắt đầu và kết thúc
     symbol = st.sidebar.selectbox("Chọn cặp coin", available_symbols)
-
-    # Chọn khoảng thời gian (interval) từ sidebar
-    interval = st.sidebar.selectbox("Chọn khoảng thời gian", ["1m", "5m", "15m", "30m", "1h", "4h", "1d"])
-
-    # Chọn thời gian bắt đầu và kết thúc từ sidebar
+    interval = st.sidebar.selectbox("Chọn khoảng thời gian", ["1m", "5m", "15m", "30m", "1h", "4h", "1d"], index=2)
     now = datetime.now()
     start_time = st.sidebar.date_input("Chọn ngày bắt đầu", now - timedelta(days=1))
     end_time = st.sidebar.date_input("Chọn ngày kết thúc", now)
-
-    # Chuyển đổi thời gian thành timestamp (ms)
     start_datetime = datetime.combine(start_time, datetime.min.time())
     end_datetime = datetime.combine(end_time, datetime.max.time())
-
     start_timestamp = int(start_datetime.timestamp() * 1000)
     end_timestamp = int(end_datetime.timestamp() * 1000)
 
     # Lấy dữ liệu
     df = get_coin_data(symbol, interval, start_timestamp)
 
-    # Chuyển đổi thời gian từ UTC sang múi giờ Việt Nam
-    df["Open time"] = pd.to_datetime(df["Open time"], unit="ms").dt.tz_convert('UTC').dt.tz_convert(vietnam_tz)
-    df["Close time"] = pd.to_datetime(df["Close time"], unit="ms").dt.tz_convert('UTC').dt.tz_convert(vietnam_tz)
-
     # Hiển thị dữ liệu
     st.write("Dữ liệu giá coin:")
-    st.dataframe(df, use_container_width=True)  # Sử dụng toàn bộ chiều rộng
+    st.dataframe(df, use_container_width=True)
 
-    # Thêm slider để điều chỉnh số bước dự đoán (horizon)
-    horizon = st.sidebar.slider("Chọn số bước dự đoán", min_value=1, max_value=10, value=1)
+    # Chọn số bước dự đoán
+    horizon = st.sidebar.slider("Chọn số bước dự đoán", 1, 10, 1)
 
-    # Dự đoán giá sử dụng GARCH
+    # Dự đoán giá
     predicted_prices_garch, predicted_volatility = predict_price_garch(df, horizon)
-
-    # Dự đoán giá sử dụng Seasonal ARIMA
-    predicted_prices_arima = predict_price_arima(df, horizon)
-
-    # Dự đoán giá sử dụng Moving Averages
-    last_short_ma, last_long_ma, moving_average_prediction = predict_price_moving_average(df)
-
-    # Dự đoán giá sử dụng EMA
-    last_ema, ema_prediction = predict_price_ema(df)
-
-    # Dự đoán giá sử dụng Seasonal ARIMA
     predicted_prices_sarima = predict_price_sarima(df, horizon)
-
-    # Dự đoán giá sử dụng GRU
     predicted_prices_gru = predict_price_gru(df, horizon)
 
-    # Dự đoán giá sử dụng Price Action
+    # Tính toán điểm mua vào và điểm chốt lời
+    last_price = df["Close"].iloc[-1]
+    entry_points_garch, target_points_garch = calculate_entry_and_target_points(predicted_prices_garch, last_price)
+    entry_points_sarima, target_points_sarima = calculate_entry_and_target_points(predicted_prices_sarima, last_price)
+    entry_points_gru, target_points_gru = calculate_entry_and_target_points(predicted_prices_gru, last_price)
+
+    
+
+    # Dự đoán giá
+    last_short_ma, last_long_ma, moving_average_prediction = predict_price_moving_average(df)
+    last_ema, ema_prediction = predict_price_ema(df)
     support, resistance, price_action_prediction = predict_price_action(df)
 
-    # Tạo DataFrame để hiển thị kết quả dự đoán
+    # Hiển thị kết quả dự đoán
     predictions_df = pd.DataFrame({
         "Bước": [f"Bước {i+1}" for i in range(horizon)],
         "Dự đoán GARCH": predicted_prices_garch,
-        "Dự đoán ARIMA": predicted_prices_arima,
-        "Dự đoán SARIMA": predicted_prices_sarima,  # Thêm cột cho SARIMA
-        "Dự đoán GRU": predicted_prices_gru,  # Thêm cột cho GRU
+        "Dự đoán SARIMA": predicted_prices_sarima,
+        "Dự đoán GRU": predicted_prices_gru,
         "Short MA": last_short_ma,
         "Long MA": last_long_ma,
-        #"Kết luận MA": moving_average_prediction,
         "EMA": last_ema,
-        #"Kết luận EMA": ema_prediction,
         "Mức hỗ trợ": support,
         "Mức kháng cự": resistance,
-        #"Kết luận Price Action": price_action_prediction
     })
-
-    # Hiển thị kết quả dự đoán
     st.write("Dự đoán giá coin tiếp theo cho các bước:")
-    st.dataframe(predictions_df, use_container_width=True)  # Sử dụng toàn bộ chiều rộng
+    st.dataframe(predictions_df, use_container_width=True)
 
-    # Tạo DataFrame để lưu kết luận
+    # Hiển thị kết luận
     conclusions = []
     for i in range(horizon):
         garch_conclusion = "Mua" if predicted_prices_garch[i] > df["Close"].iloc[-1] else "Bán"
-        arima_conclusion = "Mua" if predicted_prices_arima[i] > df["Close"].iloc[-1] else "Bán"
         sarima_conclusion = "Mua" if predicted_prices_sarima[i] > df["Close"].iloc[-1] else "Bán"
         gru_conclusion = "Mua" if predicted_prices_gru[i] > df["Close"].iloc[-1] else "Bán"
-
         conclusions.append({
             "Bước": f"Bước {i+1}",
             "Kết luận GARCH": garch_conclusion,
-            "Kết luận ARIMA": arima_conclusion,
-            "Kết luận SARIMA": sarima_conclusion,  # Thêm cột cho SARIMA
-            "Kết luận GRU": gru_conclusion,  # Thêm cột cho GRU
-            "Kết luận MA": moving_average_prediction,  # Thêm cột cho MA
-            "Kết luận EMA": ema_prediction,  # Thêm cột cho EMA
-            "Kết luận Price Action": price_action_prediction  # Thêm cột cho Price Action
+            "Kết luận SARIMA": sarima_conclusion,
+            "Kết luận GRU": gru_conclusion,
+            "Kết luận MA": moving_average_prediction,
+            "Kết luận EMA": ema_prediction,
+            "Kết luận Price Action": price_action_prediction
         })
-
     conclusions_df = pd.DataFrame(conclusions)
-
-    # Hiển thị kết luận
     st.write("Kết luận cho từng bước:")
-    st.dataframe(conclusions_df, use_container_width=True)  # Sử dụng toàn bộ chiều rộng
+    st.dataframe(conclusions_df, use_container_width=True)
 
-    # Vẽ biểu đồ với Plotly
+    
+    # Hiển thị bảng điểm mua vào và điểm bán
+    entry_target_df = pd.DataFrame({
+        "Bước": [f"Bước {i+1}" for i in range(horizon)],
+        "Điểm mua GARCH": entry_points_garch,
+        "Điểm bán GARCH": target_points_garch,  # Thêm cột "Điểm bán GARCH"
+        "Điểm mua SARIMA": entry_points_sarima,
+        "Điểm bán SARIMA": target_points_sarima,  # Thêm cột "Điểm bán SARIMA"
+        "Điểm mua GRU": entry_points_gru,
+        "Điểm bán GRU": target_points_gru,  # Thêm cột "Điểm bán GRU"
+    })
+
+    st.write("Bảng điểm mua vào và điểm bán:")
+    st.dataframe(entry_target_df, use_container_width=True)
+
+    # Vẽ biểu đồ
     fig = go.Figure()
-
-    # Vẽ biểu đồ giá đóng cửa
     fig.add_trace(go.Scatter(x=df["Open time"].dt.tz_localize(None), y=df["Close"],
                              mode='lines', name='Giá đóng cửa', line=dict(color='blue')))
-
-    # Vẽ dự đoán giá từ GARCH cho từng bước
     for i in range(horizon):
-        fig.add_trace(go.Scatter(x=[df["Open time"].iloc[-1].tz_localize(None), 
-                                     df["Open time"].iloc[-1].tz_localize(None) + timedelta(hours=i+1)],
+        # Tính toán thời gian dự đoán dựa trên khoảng thời gian của dữ liệu
+        predicted_time = df["Open time"].iloc[-1] + pd.to_timedelta((i + 1) * int(interval[:-1]), unit=interval[-1])
+        
+        fig.add_trace(go.Scatter(x=[df["Open time"].iloc[-1].tz_localize(None), predicted_time],
                                  y=[df["Close"].iloc[-1], predicted_prices_garch[i]],
                                  mode='lines+text', name=f'Dự đoán giá GARCH Bước {i+1}',
                                  line=dict(color='red', dash='dash'),
                                  text=['', f'{predicted_prices_garch[i]:.2f}'],
                                  textposition='top right'))
-
-    # Vẽ dự đoán giá từ ARIMA cho từng bước
-    for i in range(horizon):
-        fig.add_trace(go.Scatter(x=[df["Open time"].iloc[-1].tz_localize(None), 
-                                     df["Open time"].iloc[-1].tz_localize(None) + timedelta(hours=i+1)],
-                                 y=[df["Close"].iloc[-1], predicted_prices_arima[i]],
-                                 mode='lines+text', name=f'Dự đoán giá ARIMA Bước {i+1}',
-                                 line=dict(color='orange', dash='dash'),
-                                 text=['', f'{predicted_prices_arima[i]:.2f}'],
-                                 textposition='top right'))
-
-    # Vẽ dự đoán giá từ SARIMA cho từng bước
-    for i in range(horizon):
-        fig.add_trace(go.Scatter(x=[df["Open time"].iloc[-1].tz_localize(None), 
-                                     df["Open time"].iloc[-1].tz_localize(None) + timedelta(hours=i+1)],
+        fig.add_trace(go.Scatter(x=[df["Open time"].iloc[-1].tz_localize(None), predicted_time],
                                  y=[df["Close"].iloc[-1], predicted_prices_sarima[i]],
                                  mode='lines+text', name=f'Dự đoán giá SARIMA Bước {i+1}',
-                                 line=dict(color='purple', dash='dash'),
+                                 line=dict(color='green', dash='dash'),
                                  text=['', f'{predicted_prices_sarima[i]:.2f}'],
                                  textposition='top right'))
-
-    # Vẽ dự đoán giá từ GRU cho từng bước
-    for i in range(horizon):
-        fig.add_trace(go.Scatter(x=[df["Open time"].iloc[-1].tz_localize(None), 
-                                     df["Open time"].iloc[-1].tz_localize(None) + timedelta(hours=i+1)],
+        fig.add_trace(go.Scatter(x=[df["Open time"].iloc[-1].tz_localize(None), predicted_time],
                                  y=[df["Close"].iloc[-1], predicted_prices_gru[i]],
                                  mode='lines+text', name=f'Dự đoán giá GRU Bước {i+1}',
-                                 line=dict(color='cyan', dash='dash'),
+                                 line=dict(color='orange', dash='dash'),
                                  text=['', f'{predicted_prices_gru[i]:.2f}'],
                                  textposition='top right'))
-
-    # Vẽ Moving Averages
     fig.add_trace(go.Scatter(x=df["Open time"].dt.tz_localize(None), y=df['Short MA'],
-                             mode='lines', name='Short MA', line=dict(color='green')))
+                             mode='lines', name='Short MA', line=dict(color='purple')))
     fig.add_trace(go.Scatter(x=df["Open time"].dt.tz_localize(None), y=df['Long MA'],
                              mode='lines', name='Long MA', line=dict(color='pink')))
-    
-    # Vẽ EMA
     fig.add_trace(go.Scatter(x=df["Open time"].dt.tz_localize(None), y=df['EMA'],
-                             mode='lines', name='EMA', line=dict(color='orange')))
-
-    # Cập nhật bố cục của biểu đồ
+                             mode='lines', name='EMA', line=dict(color='cyan')))
     fig.update_layout(
         title=f"Biểu đồ giá {symbol}",
         xaxis_title="Thời gian",
         yaxis_title="Giá (USD)",
         template="plotly_dark",
-        width=1200,  # Đặt chiều rộng của biểu đồ
-        height=600   # Đặt chiều cao của biểu đồ
+        width=1200,
+        height=600
     )
-
-    # Hiển thị biểu đồ
     st.plotly_chart(fig)
-        # Hiển thị biểu đồ
-   
 
+    # Kiểm tra kiểu dữ liệu của các cột
+    print(df.dtypes)
+
+    # Chuyển đổi các cột "High", "Low", "Close" thành kiểu số
+    df['High'] = pd.to_numeric(df['High'], errors='coerce')
+    df['Low'] = pd.to_numeric(df['Low'], errors='coerce')
+    df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
+
+    # Kiểm tra lại kiểu dữ liệu sau khi chuyển đổi
+    print(df.dtypes)
+
+    # Tính toán ATR
+    df['ATR'] = calculate_atr(df)
+
+    # Tính toán Bollinger Bands
+    bollinger_bands = calculate_bollinger_bands(df)
+
+    # Hiển thị mô tả về ATR
+    st.write("### Chỉ số kỹ thuật Average True Range (ATR)")
+    st.write("""
+    Average True Range (ATR) là một chỉ số đo lờng độ biến động của giá. 
+    ATR không chỉ đo lường sự thay đổi giá giữa các phiên mà còn tính đến các khoảng cách giữa giá cao nhất và thấp nhất trong một khoảng thời gian nhất định.
+    - **Cách tính ATR**:
+      - True Range (TR) là giá trị lớn nhất trong ba giá trị:
+        1. Khoảng cách giữa giá cao nhất và giá thấp nhất trong phiên hiện tại.
+        2. Khoảng cách giữa giá cao nhất trong phiên hiện tại và giá đóng cửa của phiên trước.
+        3. Khoảng cách giữa giá thấp nhất trong phiên hiện tại và giá đóng cửa của phiên trước.
+      - ATR là trung bình của TR trong một khoảng thời gian nhất định (thường là 14 phiên).
+    """)
+    st.write("""
+    - **Ý nghĩa**: 
+      - Biến động cao có thể là tín hiệu để điều chỉnh mức dừng lỗ hoặc chốt lời.
+      - Mua khi ATR tăng trong xu hướng tăng; Bán khi ATR tăng trong xu hướng giảm.""")
+
+    # Hiển thị ATR
+    st.write("Chỉ số kỹ thuật ATR:")
+    st.dataframe(df[['Open time', 'ATR']], use_container_width=True)
+
+    # Hiển thị mô tả về Bollinger Bands
+    st.write("### Chỉ số kỹ thuật Bollinger Bands")
+    st.write("""
+    Bollinger Bands là một chỉ số kỹ thuật bao gồm một đường trung bình động (MA) và hai đường biên (upper band và lower band) được tính toán dựa trên độ lệch chuẩn của giá.
+    - **Cách tính Bollinger Bands**:
+      - Đường trung bình động (MA) là trung bình của giá đóng cửa trong một khoảng thời gian nhất định (thường là 20 phiên).
+      - Upper Band được tính bằng MA cộng với độ lệch chuẩn của giá đóng cửa nhân với một hệ số (thường là 2).
+      - Lower Band được tính bằng MA trừ đi độ lệch chuẩn của giá đóng cửa nhân với một hệ số (thường là 2).
+    """)
+
+
+    # Hiển thị Bollinger Bands
+    st.write("Chỉ số kỹ thuật Bollinger Bands:")
+    st.dataframe(bollinger_bands, use_container_width=True)
+    st.write("""
+        - **Ý nghĩa Average (MA)**: 
+      - Xác định xu hướng hiện tại của thị trường.
+      - Mua khi giá cắt lên trên MA; Bán khi giá cắt xuống dưới MA.
+
+    - **Ý nghĩa Upper Band và Lower Band (Bollinger Bands)**: 
+      - Upper Band cho thấy tài sản có thể bị mua quá mức; Lower Band cho thy tài sản có thể bị bán quá mức.
+      - Mua khi giá chạm vào Lower Band và có dấu hiệu đảo chiều; Bán khi giá chạm vào Upper Band và có dấu hiệu đảo chiều.
+    """)
+    
