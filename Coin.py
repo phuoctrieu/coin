@@ -54,18 +54,36 @@ def get_coin_data(symbol, interval, start_time):
 
     return df
 
-# Hàm để lấy danh sách các đồng coin
+# Cấu hình logging
+logging.basicConfig(filename='app.log', level=logging.ERROR, 
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+
 def get_available_symbols():
     try:
-        # Sử dụng phương thức requests.get tương tự như trong get_coin_data
-        response = requests.get("https://data.binance.com/api/v3/exchangeInfo")  # Thêm verify=True
-        response.raise_for_status()  # Raise an error for bad responses
+        response = requests.get("https://api.binance.com/api/v3/exchangeInfo", verify=True)
+        response.raise_for_status()
         data = response.json()
-        symbols = [s['symbol'] for s in data['symbols'] if s['status'] == 'TRADING']
+        
+        if 'symbols' in data:
+            symbols = [s['symbol'] for s in data['symbols'] if 'status' in s and s['status'] == 'TRADING']
+        else:
+            st.error("Dữ liệu trả về từ Binance API không hợp lệ.")
+            logging.error("Invalid data returned from Binance API.")
+            return []
         return symbols
-    except requests.exceptions.RequestException as e:  # Thay đổi để bắt tất cả các lỗi liên quan đến requests
-        st.error(f"Error fetching available symbols: {e}")  # Thông báo lỗi
-        return []  # Trả về danh sách rỗng trong trường hợp lỗi
+
+    except requests.exceptions.Timeout:
+        st.error("Lỗi timeout khi lấy danh sách symbol.")
+        logging.error("Timeout error when fetching available symbols.")
+        return []
+    except requests.exceptions.ConnectionError:
+        st.error("Lỗi kết nối tới Binance API.")
+        logging.error("Connection error to Binance API.")
+        return []
+    except requests.exceptions.RequestException as e:
+        st.error(f"Lỗi khi lấy danh sách symbol: {e}")
+        logging.error(f"Error fetching available symbols: {e}")
+        return []
 
 # Hàm dự đoán giá sử dụng GARCH model
 def predict_price_garch(df, horizon):
