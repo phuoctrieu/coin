@@ -55,14 +55,10 @@ def get_coin_data(symbol, interval, start_time):
 
 # Hàm để lấy danh sách các đồng coin
 def get_available_symbols():
-    try:
-        response = requests.get("https://api.binance.com/api/v3/exchangeInfo", verify=False)
-        response.raise_for_status()  # Raise an error for bad responses
-        data = response.json()
-        symbols = [s['symbol'] for s in data['symbols'] if s['status'] == 'TRADING']
-    except requests.exceptions.RequestException as e:
-        st.error(f"Error fetching symbols: {e}")
-        return []
+    response = requests.get("https://api.binance.com/api/v3/exchangeInfo", verify=False)
+    response.raise_for_status()  # Raise an error for bad responses
+    data = response.json()
+    symbols = [s['symbol'] for s in data['symbols'] if s['status'] == 'TRADING']
     return symbols
 
 # Hàm dự đoán giá sử dụng GARCH model
